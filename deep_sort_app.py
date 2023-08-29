@@ -224,14 +224,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Deep SORT")
     parser.add_argument(
         "--sequence_dir", help="Path to MOTChallenge sequence directory",
-        default=None, required=True)
+        # default="/data/joyiot/liyong/datasets/MOT16/test/MOT16-06", required=False)
+        default="E:/dataset/MOT16/test/MOT16-06", required=False)
     parser.add_argument(
-        "--detection_file", help="Path to custom detections.", default=None,
-        required=True)
+        # "--detection_file", help="Path to custom detections.", default="./data/MOT16-06.npy",
+        "--detection_file", help="Path to custom detections.", default="E:/dataset/MOT16_POI_test/MOT16-06.npy",
+        required=False)
     parser.add_argument(
         "--output_file", help="Path to the tracking output file. This file will"
         " contain the tracking results on completion.",
-        default="/tmp/hypotheses.txt")
+        default="./output/hypotheses.txt")
     parser.add_argument(
         "--min_confidence", help="Detection confidence threshold. Disregard "
         "all detections that have a confidence lower than this value.",
