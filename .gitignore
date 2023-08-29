@@ -91,3 +91,6 @@ ENV/
 
 .idea
 output
+*.pb
+*.pt
+*.npy

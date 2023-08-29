@@ -15,9 +15,13 @@ def _run_in_batches(f, data_dict, out, batch_size):
     for i in range(num_batches):
         s, e = i * batch_size, (i + 1) * batch_size
         batch_data_dict = {k: v[s:e] for k, v in data_dict.items()}
+        # g = tf.Graph()
+        # with g.device('/gpu:0'):
         out[s:e] = f(batch_data_dict)
     if e < len(out):
         batch_data_dict = {k: v[e:] for k, v in data_dict.items()}
+        # g = tf.Graph()
+        # with g.device('/gpu:0'):
         out[e:] = f(batch_data_dict)
 
 
@@ -179,6 +183,8 @@ def generate_detections(encoder, mot_dir, output_dir, detection_dir=None):
         output_filename = os.path.join(output_dir, "%s.npy" % sequence)
         np.save(
             output_filename, np.asarray(detections_out), allow_pickle=False)
+
+
 
 
 def parse_args():

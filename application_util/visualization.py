@@ -75,9 +75,9 @@ class NoVisualization(object):
     def draw_trackers(self, trackers):
         pass
 
-    def run(self, frame_callback):
+    def run(self, frame_callback, detection_model):
         while self.frame_idx <= self.last_idx:
-            frame_callback(self, self.frame_idx)
+            frame_callback(self, self.frame_idx, detection_model)
             self.frame_idx += 1
 
 

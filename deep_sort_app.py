@@ -6,15 +6,18 @@ import os
 
 import cv2
 import numpy as np
-
+import time
 from application_util import preprocessing
 from application_util import visualization
 from deep_sort import nn_matching
 from deep_sort.detection import Detection
 from deep_sort.tracker import Tracker
 
+from object_detect import get_det_and_features
+import torch
 
-def gather_sequence_info(sequence_dir, detection_file):
+
+def gather_sequence_info(sequence_dir):
     """Gather sequence information, such as image filenames, detections,
     groundtruth (if available).
 
@@ -47,8 +50,8 @@ def gather_sequence_info(sequence_dir, detection_file):
     groundtruth_file = os.path.join(sequence_dir, "gt/gt.txt")
 
     detections = None
-    if detection_file is not None:
-        detections = np.load(detection_file)
+    # if detection_file is not None:
+    #     detections = np.load(detection_file)
     groundtruth = None
     if os.path.exists(groundtruth_file):
         groundtruth = np.loadtxt(groundtruth_file, delimiter=',')
@@ -64,8 +67,9 @@ def gather_sequence_info(sequence_dir, detection_file):
         min_frame_idx = min(image_filenames.keys())
         max_frame_idx = max(image_filenames.keys())
     else:
-        min_frame_idx = int(detections[:, 0].min())
-        max_frame_idx = int(detections[:, 0].max())
+        # min_frame_idx = int(detections[:, 0].min())
+        # max_frame_idx = int(detections[:, 0].max())
+        print(f"the length of image filenames is less than zero, please check.")
 
     info_filename = os.path.join(sequence_dir, "seqinfo.ini")
     if os.path.exists(info_filename):
@@ -114,11 +118,11 @@ def create_detections(detection_mat, frame_idx, min_height=0):
         Returns detection responses at given frame index.
 
     """
-    frame_indices = detection_mat[:, 0].astype(np.int)
-    mask = frame_indices == frame_idx
+    # frame_indices = detection_mat[:, 0].astype(np.int)
+    # mask = frame_indices == frame_idx
 
     detection_list = []
-    for row in detection_mat[mask]:
+    for row in detection_mat:
         bbox, confidence, feature = row[2:6], row[6], row[10:]
         if bbox[3] < min_height:
             continue
@@ -126,7 +130,7 @@ def create_detections(detection_mat, frame_idx, min_height=0):
     return detection_list
 
 
-def run(sequence_dir, detection_file, output_file, min_confidence,
+def run(sequence_dir, output_file, min_confidence,
         nms_max_overlap, min_detection_height, max_cosine_distance,
         nn_budget, display):
     """Run multi-target tracker on a particular sequence.
@@ -157,18 +161,24 @@ def run(sequence_dir, detection_file, output_file, min_confidence,
         If True, show visualization of intermediate tracking results.
 
     """
-    seq_info = gather_sequence_info(sequence_dir, detection_file)
+    seq_info = gather_sequence_info(sequence_dir)
     metric = nn_matching.NearestNeighborDistanceMetric(
         "cosine", max_cosine_distance, nn_budget)
     tracker = Tracker(metric)
     results = []
 
-    def frame_callback(vis, frame_idx):
+    def frame_callback(vis, frame_idx, detection_model):
         print("Processing frame %05d" % frame_idx)
 
         # Load image and generate detections.
+
+        img_dir = "/data/joyiot/liyong/datasets/MOT16/test/MOT16-06/img1"
+        file_list = os.listdir(img_dir)
+        img_file = os.path.join(img_dir, file_list[frame_idx])
+        cur_detect = get_det_and_features(img_file, model=detection_model)
+
         detections = create_detections(
-            seq_info["detections"], frame_idx, min_detection_height)
+            cur_detect, frame_idx, min_detection_height)
         detections = [d for d in detections if d.confidence >= min_confidence]
 
         # Run non-maxima suppression.
@@ -197,26 +207,38 @@ def run(sequence_dir, detection_file, output_file, min_confidence,
             bbox = track.to_tlwh()
             results.append([
                 frame_idx, track.track_id, bbox[0], bbox[1], bbox[2], bbox[3]])
+            row = [frame_idx, track.track_id, bbox[0], bbox[1], bbox[2], bbox[3]]
+            output_file = "./output/track.txt"
+            f = open(output_file, 'a')
+            print('%d,%d,%.2f,%.2f,%.2f,%.2f,1,-1,-1,-1' % (
+                row[0], row[1], row[2], row[3], row[4], row[5]), file=f)
 
     # Run tracker.
     if display:
         visualizer = visualization.Visualization(seq_info, update_ms=5)
     else:
         visualizer = visualization.NoVisualization(seq_info)
-    visualizer.run(frame_callback)
 
-    # Store results.
-    f = open(output_file, 'w')
-    for row in results:
-        print('%d,%d,%.2f,%.2f,%.2f,%.2f,1,-1,-1,-1' % (
-            row[0], row[1], row[2], row[3], row[4], row[5]),file=f)
+    detection_model = torch.hub.load('/data/joyiot/.cache/torch/hub/ultralytics_yolov5_master/', 'yolov5x',
+                                     source='local')
+    time_start = time.time()
+    visualizer.run(frame_callback, detection_model)
+    time_end = time.time()
+    print(f"elapsed time:{time_end - time_start}, FPS is: {seq_info['max_frame_idx'] / (time_end - time_start)}")
+
+    # # Store results.
+    # f = open(output_file, 'w')
+    # for row in results:
+    #     print('%d,%d,%.2f,%.2f,%.2f,%.2f,1,-1,-1,-1' % (
+    #         row[0], row[1], row[2], row[3], row[4], row[5]), file=f)
 
 
 def bool_string(input_string):
-    if input_string not in {"True","False"}:
+    if input_string not in {"True", "False"}:
         raise ValueError("Please Enter a valid Ture/False choice")
     else:
         return (input_string == "True")
+
 
 def parse_args():
     """ Parse command line arguments.
@@ -224,42 +246,42 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Deep SORT")
     parser.add_argument(
         "--sequence_dir", help="Path to MOTChallenge sequence directory",
-        # default="/data/joyiot/liyong/datasets/MOT16/test/MOT16-06", required=False)
-        default="E:/dataset/MOT16/test/MOT16-06", required=False)
+        default="/data/joyiot/liyong/datasets/MOT16/test/MOT16-06", required=False)
+    # default="E:/dataset/MOT16/test/MOT16-06", required=False)
     parser.add_argument(
         # "--detection_file", help="Path to custom detections.", default="./data/MOT16-06.npy",
         "--detection_file", help="Path to custom detections.", default="E:/dataset/MOT16_POI_test/MOT16-06.npy",
         required=False)
     parser.add_argument(
         "--output_file", help="Path to the tracking output file. This file will"
-        " contain the tracking results on completion.",
-        default="./output/hypotheses.txt")
+                              " contain the tracking results on completion.",
+        default="./output/track.txt")
     parser.add_argument(
         "--min_confidence", help="Detection confidence threshold. Disregard "
-        "all detections that have a confidence lower than this value.",
+                                 "all detections that have a confidence lower than this value.",
         default=0.8, type=float)
     parser.add_argument(
         "--min_detection_height", help="Threshold on the detection bounding "
-        "box height. Detections with height smaller than this value are "
-        "disregarded", default=0, type=int)
+                                       "box height. Detections with height smaller than this value are "
+                                       "disregarded", default=0, type=int)
     parser.add_argument(
-        "--nms_max_overlap",  help="Non-maxima suppression threshold: Maximum "
-        "detection overlap.", default=1.0, type=float)
+        "--nms_max_overlap", help="Non-maxima suppression threshold: Maximum "
+                                  "detection overlap.", default=1.0, type=float)
     parser.add_argument(
         "--max_cosine_distance", help="Gating threshold for cosine distance "
-        "metric (object appearance).", type=float, default=0.2)
+                                      "metric (object appearance).", type=float, default=0.2)
     parser.add_argument(
         "--nn_budget", help="Maximum size of the appearance descriptors "
-        "gallery. If None, no budget is enforced.", type=int, default=None)
+                            "gallery. If None, no budget is enforced.", type=int, default=None)
     parser.add_argument(
         "--display", help="Show intermediate tracking results",
-        default=True, type=bool_string)
+        default=False, type=bool_string)
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     run(
-        args.sequence_dir, args.detection_file, args.output_file,
+        args.sequence_dir, args.output_file,
         args.min_confidence, args.nms_max_overlap, args.min_detection_height,
         args.max_cosine_distance, args.nn_budget, args.display)
